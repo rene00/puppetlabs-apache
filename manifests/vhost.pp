@@ -5,8 +5,7 @@
 # Parameters:
 # - The $port to configure the host on
 # - The $docroot provides the DocumentationRoot variable
-# - The $serveradmin will specify an email address for Apache that it will
-#   display when it renders one of it's error pages
+# - The $serveradmin will specify an email address for Apache that it will display when it renders one of it's error pages
 # - The $configure_firewall option is set to true or false to specify if
 #   a firewall should be configured.
 # - The $ssl option is set true or false to enable SSL for this Virtual Host
@@ -16,11 +15,8 @@
 # - The $servername is the primary name of the virtual host
 # - The $serveraliases of the site
 # - The $options for the given vhost
-# - The $override for the given vhost (array of AllowOverride arguments)
 # - The $vhost_name for name based virtualhosting, defaulting to *
-# - The $logroot specifies the location of the virtual hosts logfiles, default
-#   to /var/log/<apache log location>/
-# - The $ensure specifies if vhost file is present or absent.
+# - The $logroot specifies the location of the virtual hosts logfiles, default to /var/log/<apache log location>/
 #
 # Actions:
 # - Install Apache Virtual Hosts
@@ -38,9 +34,7 @@
 define apache::vhost(
     $port,
     $docroot,
-    $docroot_owner      = 'root',
-    $docroot_group      = 'root',
-    $serveradmin        = false,
+    $serveradmin,
     $configure_firewall = true,
     $ssl                = $apache::params::ssl,
     $template           = $apache::params::template,
@@ -50,16 +44,10 @@ define apache::vhost(
     $auth               = $apache::params::auth,
     $redirect_ssl       = $apache::params::redirect_ssl,
     $options            = $apache::params::options,
-    $override           = $apache::params::override,
     $apache_name        = $apache::params::apache_name,
     $vhost_name         = $apache::params::vhost_name,
-    $logroot            = "/var/log/$apache::params::apache_name",
-    $ensure             = 'present'
+    $logroot            = "/var/log/$apache::params::apache_name"
   ) {
-
-  validate_re($ensure, [ '^present$', '^absent$' ],
-  "${ensure} is not supported for ensure.
-  Allowed values are 'present' and 'absent'.")
 
   include apache
 
@@ -70,46 +58,35 @@ define apache::vhost(
   }
 
   if $ssl == true {
-    include apache::mod::ssl
+    include apache::ssl
   }
 
   # Since the template will use auth, redirect to https requires mod_rewrite
   if $redirect_ssl == true {
-    if $::osfamily == 'debian' {
-      A2mod <| title == 'rewrite' |>
+    case $::operatingsystem {
+      'debian','ubuntu': {
+        A2mod <| title == 'rewrite' |>
+      }
+      default: { }
     }
   }
 
-  # This ensures that the docroot exists
-  # But enables it to be specified across multiple vhost resources
-  if ! defined(File[$docroot]) {
-    file { $docroot:
-      ensure => directory,
-      owner  => $docroot_owner,
-      group  => $docroot_group,
-    }
-  }
-
-  # Same as above, but for logroot
-  if ! defined(File[$logroot]) {
-    file { $logroot:
-      ensure => directory,
-    }
+  file {"${apache::params::vdir}/${priority}-${name}-$docroot":
+    path => $docroot,
+    ensure => directory,
   }
 
   file { "${priority}-${name}.conf":
-    ensure  => $ensure,
-    path    => "${apache::params::vdir}/${priority}-${name}.conf",
-    content => template($template),
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0755',
-    require => [
-      Package['httpd'],
-      File[$docroot],
-      File[$logroot],
-    ],
-    notify  => Service['httpd'],
+      path    => "${apache::params::vdir}/${priority}-${name}.conf",
+      content => template($template),
+      owner   => 'root',
+      group   => 'root',
+      mode    => '0755',
+      require => [
+          Package['httpd'],
+          File["${apache::params::vdir}/${priority}-${name}-$docroot"],
+      ],
+      notify  => Service['httpd'],
   }
 
   if $configure_firewall {
